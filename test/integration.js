@@ -263,8 +263,12 @@ function bootStack(init) {
   };
 
   const intervals = [];
-  globalThis.navigator = (init && init.navigator) ||
-    { mediaSession: { metadata: { title: 'Таблетка', artist: 'МУККА' } } };
+  // В Node 21+ navigator — глобальный геттер, обычное присваивание падает.
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true, writable: true,
+    value: (init && init.navigator) ||
+      { mediaSession: { metadata: { title: 'Таблетка', artist: 'МУККА' } } },
+  });
   globalThis.setInterval = (fn) => { intervals.push(fn); return intervals.length; };
 
   new Function(injectRaw).call(win);
