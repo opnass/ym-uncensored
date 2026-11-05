@@ -101,7 +101,7 @@ extension/
 
 Если расширение тебе пригодилось, можешь поддержать автора на Boosty:
 
-**👉 [Поддержать на Boosty](BOOSTY_LINK_HERE)**
+**👉 [Поддержать на Boosty](https://boosty.to/opnas)**
 
 ---
 
