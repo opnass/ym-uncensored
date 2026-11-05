@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>YM Uncensored — библиотека</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px 28px 60px;
+      font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: #14151a; color: #e6e7ea;
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    h2 { font-size: 15px; margin: 28px 0 10px; color: #b9bcc6; text-transform: uppercase; letter-spacing: .06em; }
+    .sub { color: #8b8f9c; margin: 0 0 20px; font-size: 13px; }
+    section { max-width: 1040px; }
+    .card { background: #1c1e26; border: 1px solid #2a2d38; border-radius: 12px; padding: 16px 18px; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .row + .row { margin-top: 10px; }
+    label.opt { display: flex; gap: 8px; align-items: center; cursor: pointer; user-select: none; }
+    input[type=range] { width: 160px; vertical-align: middle; }
+    button {
+      background: #2b2f3c; color: #e6e7ea; border: 1px solid #3a3f4f;
+      padding: 7px 13px; border-radius: 8px; cursor: pointer; font: inherit;
+    }
+    button:hover { background: #353a4a; }
+    button.primary { background: #ffcc00; color: #1a1a1a; border-color: #ffcc00; font-weight: 600; }
+    button.primary:hover { background: #ffd633; }
+    button.danger { border-color: #5a2b2b; color: #ff9a9a; }
+    button.danger:hover { background: #3a2020; }
+    button:disabled { opacity: .45; cursor: default; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #262932; }
+    th { color: #8b8f9c; font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    tr:last-child td { border-bottom: none; }
+    .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #8b8f9c; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; }
+    .pill.auto { background: #262a38; color: #9aa3b8; }
+    .pill.manual { background: #2c3a2a; color: #9ad48f; }
+    .muted { color: #8b8f9c; }
+    .drop {
+      border: 1.5px dashed #3a3f4f; border-radius: 12px; padding: 22px;
+      text-align: center; color: #8b8f9c; transition: .15s; cursor: pointer;
+    }
+    .drop.hot { border-color: #ffcc00; color: #ffcc00; background: #1e2029; }
+    #toast {
+      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+      background: #2b2f3c; border: 1px solid #3a3f4f; padding: 10px 16px;
+      border-radius: 10px; opacity: 0; transition: .2s; pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+    .narrow { width: 90px; }
+    .grow { flex: 1; }
+  </style>
+</head>
+<body>
+  <section>
+    <h1>YM Uncensored</h1>
+    <p class="sub">Локальные explicit-версии треков подставляются в веб-плеер Яндекс.Музыки.</p>
+
+    <h2>Поведение</h2>
+    <div class="card">
+      <div class="row">
+        <label class="opt"><input type="checkbox" id="enabled" /> Расширение включено</label>
+        <label class="opt"><input type="checkbox" id="autoMatch" /> Автоматически искать совпадения</label>
+        <label class="opt"><input type="checkbox" id="fuzzy" /> Нечёткий поиск</label>
+      </div>
+      <div class="row">
+        <label class="opt">Режим:
+          <select id="mode">
+            <option value="always">Всегда давать грязную версию</option>
+            <option value="ask">Предлагать (подменять по кнопке)</option>
+          </select>
+        </label>
+        <label class="opt">Порог совпадения <input type="range" id="threshold" min="0.5" max="0.99" step="0.01" /> <span id="thresholdV" class="mono"></span></label>
+      </div>
+      <div class="row">
+        <label class="opt"><input type="checkbox" id="capture" /> Режим захвата трафика (для отладки)</label>
+        <button id="exportCapture">Выгрузить захват</button>
+        <button id="clearCapture" class="danger">Очистить захват</button>
+      </div>
+    </div>
+
+    <h2>Библиотека файлов <span id="libCount" class="muted"></span></h2>
+    <div class="drop" id="drop">
+      Перетащи сюда аудиофайлы или нажми, чтобы выбрать.<br />
+      <span class="muted" style="font-size:12px">Имя файла в формате «Исполнитель - Название.mp3» заметно улучшает автоматч.</span>
+      <input type="file" id="fileInput" accept="audio/*" multiple hidden />
+    </div>
+    <div class="card" style="margin-top:12px">
+      <table>
+        <thead><tr><th>Файл</th><th>Титул / артисты</th><th class="narrow">Длит.</th><th class="narrow">Размер</th><th></th></tr></thead>
+        <tbody id="libBody"></tbody>
+      </table>
+    </div>
+
+    <h2>Привязки к трекам Яндекс.Музыки <span id="bindCount" class="muted"></span></h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>Трек в Яндексе</th><th>Ключ</th><th class="narrow">Скор</th><th class="narrow">Тип</th><th></th></tr></thead>
+        <tbody id="bindBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div id="toast"></div>
+
+  <script src="normalize.js"></script>
+  <script src="db.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
