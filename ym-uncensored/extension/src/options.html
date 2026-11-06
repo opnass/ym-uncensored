@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>YM Uncensored — библиотека</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px 28px 60px;
+      font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: #14151a; color: #e6e7ea;
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    h2 { font-size: 15px; margin: 28px 0 10px; color: #b9bcc6; text-transform: uppercase; letter-spacing: .06em; }
+    .sub { color: #8b8f9c; margin: 0 0 20px; font-size: 13px; }
+    section { max-width: 1040px; }
+    .card { background: #1c1e26; border: 1px solid #2a2d38; border-radius: 12px; padding: 16px 18px; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .row + .row { margin-top: 10px; }
+    label.opt { display: flex; gap: 8px; align-items: center; cursor: pointer; user-select: none; }
+    input[type=range] { width: 160px; vertical-align: middle; }
+    button {
+      background: #2b2f3c; color: #e6e7ea; border: 1px solid #3a3f4f;
+      padding: 7px 13px; border-radius: 8px; cursor: pointer; font: inherit;
+    }
+    button:hover { background: #353a4a; }
+    button.primary { background: #ffcc00; color: #1a1a1a; border-color: #ffcc00; font-weight: 600; }
+    button.primary:hover { background: #ffd633; }
+    button.danger { border-color: #5a2b2b; color: #ff9a9a; }
+    button.danger:hover { background: #3a2020; }
+    button:disabled { opacity: .45; cursor: default; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #262932; }
+    th { color: #8b8f9c; font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    tr:last-child td { border-bottom: none; }
+    .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #8b8f9c; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; }
+    .pill.auto { background: #262a38; color: #9aa3b8; }
+    .pill.manual { background: #2c3a2a; color: #9ad48f; }
+    .muted { color: #8b8f9c; }
+    .drop {
+      border: 1.5px dashed #3a3f4f; border-radius: 12px; padding: 22px;
+      text-align: center; color: #8b8f9c; transition: .15s; cursor: pointer;
+    }
+    .drop.hot { border-color: #ffcc00; color: #ffcc00; background: #1e2029; }
+    #toast {
+      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+      background: #2b2f3c; border: 1px solid #3a3f4f; padding: 10px 16px;
+      border-radius: 10px; opacity: 0; transition: .2s; pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+    .narrow { width: 90px; }
+    .cover { width: 34px; height: 34px; border-radius: 5px; object-fit: cover; vertical-align: middle; margin-right: 8px; background: #2a2d38; }
+    .fname { display: flex; align-items: center; }
+    .grow { flex: 1; }
+    input[type=text] { background: #14151a; color: #e6e7ea; border: 1px solid #3a3f4f; border-radius: 7px; padding: 6px 9px; font: inherit; }
+    input[type=text].url { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+    a.site { display: inline-block; margin: 2px 4px 2px 0; padding: 3px 8px; border-radius: 7px; border: 1px solid #3a3f4f;
+      background: #2b2f3c; color: #e6e7ea; text-decoration: none; font-size: 12px; }
+    a.site:hover { background: #353a4a; }
+    a.site.main { border-color: #ffcc00; color: #ffcc00; }
+    tr.hidden td { opacity: .45; }
+  </style>
+</head>
+<body>
+  <section>
+    <h1>YM Uncensored</h1>
+    <p class="sub">Локальные explicit-версии треков подставляются в веб-плеер Яндекс.Музыки.</p>
+
+    <h2>Поведение</h2>
+    <div class="card">
+      <div class="row">
+        <label class="opt"><input type="checkbox" id="enabled" /> Расширение включено</label>
+        <label class="opt"><input type="checkbox" id="autoMatch" /> Автоматически искать совпадения</label>
+        <label class="opt"><input type="checkbox" id="fuzzy" /> Нечёткий поиск</label>
+      </div>
+      <div class="row">
+        <label class="opt">Режим:
+          <select id="mode">
+            <option value="always">Всегда давать грязную версию</option>
+            <option value="ask">Предлагать (подменять по кнопке)</option>
+          </select>
+        </label>
+        <label class="opt">Порог совпадения <input type="range" id="threshold" min="0.5" max="0.99" step="0.01" /> <span id="thresholdV" class="mono"></span></label>
+      </div>
+    </div>
+
+    <h2>Вставки в «Мою волну»</h2>
+    <div class="card">
+      <div class="row">
+        <label class="opt"><input type="checkbox" id="insertEnabled" /> Вставлять свои треки между треками</label>
+        <label class="opt"><input type="checkbox" id="insertOnSkip" /> В том числе при ручном переключении («следующий», выбор трека)</label>
+      </div>
+      <div class="row">
+        <label class="opt">Вероятность на каждом стыке треков
+          <input type="range" id="insertChance" min="0" max="100" step="5" />
+          <span id="insertChanceV" class="mono"></span></label>
+        <label class="opt">Не чаще, чем раз в
+          <input type="number" id="insertMinGapMin" min="0" max="600" step="1" style="width:70px" /> мин</label>
+      </div>
+      <div class="row muted" style="font-size:12px">
+        Отметь в библиотеке файлы галочкой «Вставка» — из них выбирается случайный.
+        Вставка играет на переходе к следующему треку — когда трек доиграл или (если включено) когда его переключили; кнопки плеера управляют ею:
+        пауза, перемотка ползунком, громкость. «Следующий трек» или «пропустить» на плашке
+        отменяют вставку. Яндекс о вставках не знает: в историю и рекомендации они не попадают.
+      </div>
+    </div>
+
+    <h2>Где искать explicit-версии</h2>
+    <div class="card">
+      <div class="muted" style="font-size:12px;margin-bottom:8px">
+        Официальные магазины, где трек можно купить файлом. Включи нужные и выбери основной —
+        его кнопка будет первой. Свой сайт добавляется шаблоном ссылки, где <span class="mono">{q}</span> —
+        место для «Исполнитель Название».
+      </div>
+      <table>
+        <thead><tr><th class="narrow">Вкл.</th><th class="narrow">Основной</th><th>Сайт</th><th>Шаблон ссылки</th><th></th></tr></thead>
+        <tbody id="sitesBody"></tbody>
+      </table>
+      <div class="row" style="margin-top:10px">
+        <input type="text" id="siteName" placeholder="Название" style="width:140px" />
+        <input type="text" id="siteUrl" placeholder="https://example.com/search?q={q}" class="grow" />
+        <button id="siteAdd">Добавить сайт</button>
+      </div>
+    </div>
+
+    <h2>Треки без файла <span id="missCount" class="muted"></span></h2>
+    <div class="card">
+      <div class="row" style="margin-bottom:8px">
+        <label class="opt"><input type="checkbox" id="missShowHidden" /> Показывать скрытые</label>
+        <span class="grow"></span>
+        <button id="missClear" class="danger">Очистить список</button>
+      </div>
+      <table>
+        <thead><tr><th>Трек</th><th class="narrow">Играл</th><th>Найти</th><th></th></tr></thead>
+        <tbody id="missBody"></tbody>
+      </table>
+    </div>
+
+    <h2>Автоимпорт скачанного</h2>
+    <div class="card">
+      <div class="row">
+        <label class="opt"><input type="checkbox" id="autoImport" /> Подхватывать только что скачанные аудиофайлы</label>
+      </div>
+      <div class="row">
+        <span>Папка загрузок: <b id="importFolder">не выбрана</b></span>
+        <span id="importPerm" class="muted"></span>
+        <button id="pickFolder">Выбрать папку</button>
+        <button id="grantFolder" style="display:none">Разрешить доступ</button>
+        <button id="importNow">Импортировать скачанное <span id="importQueue" class="mono"></span></button>
+        <button id="scanFolder" title="Импортировать все аудиофайлы папки, которых ещё нет в библиотеке">Сканировать папку</button>
+      </div>
+      <div class="row muted" style="font-size:12px">
+        Когда загрузка mp3/m4a/flac/ogg в Chrome завершается, файл сразу попадает в библиотеку и привязывается
+        к треку — если он сейчас играет, explicit-версия включится сама. Chrome читает файлы с диска только
+        из папки, которую ты выбрал и разрешил; после перезапуска браузера он может спросить доступ снова —
+        тогда на иконке расширения появится «+N», а в попапе — кнопка «Импортировать».
+      </div>
+    </div>
+
+    <h2>Библиотека файлов <span id="libCount" class="muted"></span></h2>
+    <div class="drop" id="drop">
+      Перетащи сюда аудиофайлы или нажми, чтобы выбрать.<br />
+      <span class="muted" style="font-size:12px">Имя файла в формате «Исполнитель - Название.mp3» заметно улучшает автоматч.</span>
+      <input type="file" id="fileInput" accept="audio/*" multiple hidden />
+    </div>
+    <div class="card" style="margin-top:12px">
+      <table>
+        <thead><tr><th>Файл</th><th>Титул / артисты</th><th class="narrow">Длит.</th><th class="narrow">Размер</th><th class="narrow">Вставка</th><th></th></tr></thead>
+        <tbody id="libBody"></tbody>
+      </table>
+    </div>
+
+    <h2>Привязки к трекам Яндекс.Музыки <span id="bindCount" class="muted"></span></h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>Трек в Яндексе</th><th>Ключ</th><th class="narrow">Скор</th><th class="narrow">Тип</th><th></th></tr></thead>
+        <tbody id="bindBody"></tbody>
+      </table>
+    </div>
+    <details id="debug" style="margin-top:28px">
+      <summary class="muted" style="cursor:pointer;font-size:13px">Отладка</summary>
+      <div class="card" style="margin-top:10px">
+        <div class="row">
+          <label class="opt"><input type="checkbox" id="badge" /> Плашка YMU на странице плеера</label>
+        </div>
+        <div class="row">
+          <button id="report" title="Диагностика, настройки и устройство бара плеера — в буфер обмена">📋 Скопировать отчёт</button>
+          <span class="muted" style="font-size:12px">Вкладка Яндекс Музыки должна быть открыта.</span>
+        </div>
+        <textarea id="reportBox" readonly style="display:none;width:100%;height:160px;margin-top:8px;font:11px ui-monospace,Consolas,monospace;background:#14151a;color:#cfd3de;border:1px solid #3a3f4f;border-radius:8px"></textarea>
+        <div class="row">
+          <label class="opt"><input type="checkbox" id="capture" /> Режим захвата трафика</label>
+          <button id="exportCapture">Выгрузить захват</button>
+          <button id="clearCapture" class="danger">Очистить захват</button>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <div id="toast"></div>
+
+  <script src="normalize.js"></script>
+  <script src="db.js"></script>
+  <script src="cover.js"></script>
+  <script src="sites.js"></script>
+  <script src="importer.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
