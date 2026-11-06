@@ -74,7 +74,24 @@
     return Math.max(0, Math.min(1, s));
   }
 
-  const api = { norm, isExplicit, trackKey, dice, score, VERSION_MARKERS };
+  /** Строка «исполнитель название» целиком — для файлов, где исполнитель не отделён
+      («Мукка Таблетка.mp3»). Порядок не важен: берём лучшее из двух. */
+  function scoreLoose(candidate, target) {
+    const c = norm([candidate.artists, candidate.title].filter(Boolean).join(' '));
+    const a = norm([target.artists, target.title].filter(Boolean).join(' '));
+    const b = norm([target.title, target.artists].filter(Boolean).join(' '));
+    let s = Math.max(dice(c, a), dice(c, b)) - 0.04;    // чуть строже обычного: структуры нет
+    if (candidate.durationMs && target.durationMs) {
+      const diff = Math.abs(candidate.durationMs - target.durationMs) / 1000;
+      if (diff <= 3) s += 0.08;
+      else if (diff <= 8) s += 0.03;
+      else if (diff > 40) s -= 0.35;
+      else if (diff > 20) s -= 0.10;
+    }
+    return Math.max(0, Math.min(1, s));
+  }
+
+  const api = { norm, isExplicit, trackKey, dice, score, scoreLoose, VERSION_MARKERS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.YMU = Object.assign(root.YMU || {}, api);
 })(typeof self !== 'undefined' ? self : globalThis);

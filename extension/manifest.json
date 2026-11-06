@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "YM Uncensored",
-  "version": "0.6.0",
+  "version": "0.9.2",
   "description": "Играет локальные explicit-версии параллельно с веб-плеером Яндекс.Музыки.",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "downloads"
   ],
   "host_permissions": [
     "https://music.yandex.ru/*",

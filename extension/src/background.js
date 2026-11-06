@@ -3,7 +3,7 @@
    { ok, key, fileId, enabled, reason }. */
 'use strict';
 
-importScripts('normalize.js', 'db.js');
+importScripts('normalize.js', 'db.js', 'cover.js', 'importer.js');
 
 const DEFAULTS = {
   enabled: true,
@@ -15,6 +15,12 @@ const DEFAULTS = {
   titleOnlyThreshold: 0.90,
   capture: false,
   badge: true,
+  // вставки своих треков между треками (0.7.0)
+  insertEnabled: false,
+  insertChance: 0.2,       // вероятность вставки на стыке треков, 0..1
+  insertMinGapMin: 15,     // не чаще, чем раз в N минут
+  insertOnSkip: true,      // вставка и при ручном переключении трека
+  autoImport: true,        // подхватывать только что скачанные аудиофайлы (нужна выбранная папка)
 };
 
 const CHUNK = 512 * 1024;
@@ -46,10 +52,37 @@ async function diag(stage, ok, detail, key) {
 
 /* ---------- матчинг ---------- */
 
+/* Файлы, импортированные до 0.9.1, знали исполнителя только из имени — а у имён вроде
+   «Мукка Таблетка.mp3» его нет. Один раз перечитываем теги и обновляем ключ. */
+let metaUpgraded = false;
+async function upgradeMeta(files) {
+  if (metaUpgraded) return files;
+  let changed = false;
+  for (const f of files) {
+    if (f.metaChecked === 2 || !f.blob) continue;
+    try {
+      const meta = await YMUImport.metaOf(new File([asBlob(f)], f.name, { type: f.mime || 'audio/mpeg' }));
+      const upd = Object.assign({}, f, {
+        title: meta.title, artists: meta.artists, key: safeKey(meta.title, meta.artists),
+        nameTitle: meta.nameTitle, nameArtists: meta.nameArtists, fromTags: meta.fromTags, metaChecked: 2,
+      });
+      await YMUDB.putFile(upd);
+      Object.assign(f, upd);
+      changed = true;
+      if (f.key !== safeKey(meta.nameTitle, meta.nameArtists)) {
+        await diag('библиотека: теги', true, `${f.name} → ${meta.artists || '?'} — ${meta.title}`);
+      }
+    } catch (e) { /* файл без тегов или битый — оставляем как есть */ }
+  }
+  metaUpgraded = true;
+  return files;
+}
+
 async function findMatch(track, cfg) {
   let files = [];
   try { files = await YMUDB.allFiles(); } catch (e) { files = []; }
   if (!files.length) return { file: null, reason: 'библиотека пуста' };
+  files = await upgradeMeta(files);
 
   const key = safeKey(track.title, track.artists);
   const exact = files.filter((f) => f.key === key);
@@ -82,10 +115,11 @@ async function findMatch(track, cfg) {
         }
         s = Math.max(0, Math.min(1, s));
       } else {
-        s = YMU.score(
-          { title: f.title, artists: f.artists, durationMs: f.durationMs },
-          { title: track.title, artists: track.artists, durationMs: track.durationMs }
-        );
+        const cand = { title: f.title, artists: f.artists, durationMs: f.durationMs };
+        const target = { title: track.title, artists: track.artists, durationMs: track.durationMs };
+        s = YMU.score(cand, target);
+        // исполнитель не отделён от названия («Мукка Таблетка») — сравниваем строку целиком
+        if (!f.artists) s = Math.max(s, YMU.scoreLoose(cand, target));
       }
     } catch (e) { s = 0; }
     scored.push([s, f]);
@@ -121,6 +155,30 @@ async function findMatch(track, cfg) {
       + (noArtist ? ' (артист не определён)' : '')
       + (top ? ` (${top})` : ''),
   };
+}
+
+/* ---------- треки без файла ---------- */
+
+const MISSING_LIMIT = 200;
+
+/** Трек играл, а локального файла для него нет — запоминаем для списка «Треки без файла».
+    Только определённые через Media Session: запасные пути по DOM иногда хватают
+    случайную ссылку или заголовок вкладки, и такие «треки» засоряли бы список. */
+async function noteMissing(key, title, artists, via) {
+  if (!/mediaSession/.test(via || '') || !title) return;
+  try {
+    const list = (await YMUDB.getSetting('missing', [])) || [];
+    const i = list.findIndex((m) => m.key === key);
+    const now = Date.now();
+    if (i >= 0) {
+      list[i].count = (list[i].count || 1) + 1;
+      list[i].lastSeen = now;
+    } else {
+      list.push({ key, title, artists: artists || '', count: 1, firstSeen: now, lastSeen: now, hidden: false });
+    }
+    list.sort((a, b) => b.lastSeen - a.lastSeen);
+    await YMUDB.setSetting('missing', list.slice(0, MISSING_LIMIT));
+  } catch (e) { /* список — подсказка, ошибки не важны */ }
 }
 
 /* ---------- главная точка ---------- */
@@ -171,6 +229,7 @@ async function resolveTrack(p) {
 
   const { file, reason } = await findMatch({ title, artists, durationMs: p.durationMs || 0 }, cfg);
   if (!file) {
+    await noteMissing(key, title, artists, p.via);
     await diag('матч: не найден', false, reason, key);
     return { ok: true, key, fileId: null, enabled: true, reason };
   }
@@ -184,6 +243,98 @@ async function resolveTrack(p) {
 
   await diag('матч: найден', true, `${file.name || file.title} — ${reason}`, key);
   return { ok: true, key, fileId: file.id, enabled: true, reason: 'авто: ' + reason };
+}
+
+/* ---------- вставки ---------- */
+
+/** Жребий на стыке треков: интервал, затем вероятность, затем случайный файл из пула. */
+async function pickInsert(p) {
+  const force = !!(p && p.force);   // «вставить после этого трека»: без интервала и жребия
+  const cfg = await settings();
+  if (!cfg.enabled) return { ok: true, fileId: null, reason: 'расширение выключено' };
+  if (!cfg.insertEnabled) return { ok: true, fileId: null, reason: 'вставки выключены в настройках' };
+
+  const gapMs = Math.max(0, Number(cfg.insertMinGapMin) || 0) * 60000;
+  const last = Number(await YMUDB.getSetting('lastInsertAt', 0)) || 0;
+  if (!force && last && Date.now() - last < gapMs) {
+    const left = Math.ceil((gapMs - (Date.now() - last)) / 60000);
+    return { ok: true, fileId: null, reason: `интервал: ещё ~${left} мин`, retryInMs: gapMs - (Date.now() - last) };
+  }
+
+  let pool = [];
+  try { pool = (await YMUDB.allFiles()).filter((f) => f.insert); } catch (e) { pool = []; }
+  if (!pool.length) {
+    return { ok: true, fileId: null, reason: 'нет файлов с галочкой «Вставка» в библиотеке' };
+  }
+
+  const chance = Math.max(0, Math.min(1, Number(cfg.insertChance)));
+  if (!force && !(Math.random() < chance)) {
+    return { ok: true, fileId: null, reason: `не выпало (${Math.round(chance * 100)}%)` };
+  }
+
+  // не повторяем прошлую вставку, если есть из чего выбрать
+  const lastId = await YMUDB.getSetting('lastInsertFileId', null);
+  const choices = pool.length > 1 ? pool.filter((f) => f.id !== lastId) : pool;
+  const f = choices[Math.floor(Math.random() * choices.length)];
+  await diag('вставка: выпала', true, `${f.name || f.title}` + (force ? ', принудительно' : `, шанс ${Math.round(chance * 100)}%`));
+  return {
+    ok: true, fileId: f.id, title: f.title || '', artists: f.artists || '',
+    mime: f.mime || 'audio/mpeg', cover: f.cover || null,
+  };
+}
+
+/* ---------- автоимпорт скачанного ---------- */
+
+function setIconBadge(n) {
+  try {
+    if (!chrome.action) return;
+    chrome.action.setBadgeText({ text: n > 0 ? '+' + n : '' });
+    if (n > 0) chrome.action.setBadgeBackgroundColor({ color: '#c9a6ff' });
+  } catch (e) { /* ignore */ }
+}
+
+/** Скачанное → библиотека. После импорта сразу проверяем играющий трек. */
+async function runImport(ask) {
+  const res = await YMUImport.processQueue(YMUDB, { ask: !!ask });
+  metaUpgraded = false;
+  if (res.imported.length) {
+    await diag('импорт: скачанное', true, res.imported.map((f) => f.name).join(', '));
+    try { chrome.runtime.sendMessage({ kind: 'libraryChanged' }).catch(() => {}); } catch (e) {}
+    await recheckCurrentTrack();
+  }
+  if (res.needPermission) await diag('импорт: нужен доступ к папке', false, 'открой попап и нажми «Импортировать»');
+  if (res.noFolder && res.left) await diag('импорт: папка не выбрана', false, 'выбери папку загрузок в настройках');
+  setIconBadge(res.left);
+  return res;
+}
+
+/** Только что скачанный файл может быть ровно тем, что играет, — включаем его сразу. */
+async function recheckCurrentTrack() {
+  try {
+    const last = await YMUDB.getSetting('lastTrack', null);
+    if (!last || !last.title || Date.now() - (last.ts || 0) > 30 * 60 * 1000) return;
+    const r = await resolveTrack({ title: last.title, artists: last.artists, durationMs: last.durationMs, via: last.via });
+    if (r && r.fileId) notify({ kind: 'binding', data: { key: r.key, fileId: r.fileId } });
+  } catch (e) { /* ignore */ }
+}
+
+if (chrome.downloads && chrome.downloads.onChanged) {
+  chrome.downloads.onChanged.addListener((delta) => {
+    if (!delta || !delta.state || delta.state.current !== 'complete') return;
+    (async () => {
+      const cfg = await settings();
+      if (!cfg.autoImport) return;
+      const [item] = await chrome.downloads.search({ id: delta.id });
+      if (!item || !YMUImport.isAudio(item.filename, item.mime)) return;
+      const queue = (await YMUDB.getSetting('importQueue', [])) || [];
+      const name = YMUImport.basename(item.filename);
+      if (!queue.some((q) => q.id === item.id)) {
+        queue.push({ id: item.id, name, size: item.fileSize || item.totalBytes || 0, at: Date.now() });
+        await YMUDB.setSetting('importQueue', queue);
+      }
+      await runImport(false);
+    })().catch((e) => console.error('[YMU] автоимпорт', e));
+  });
 }
 
 /* ---------- утилиты ---------- */
@@ -292,6 +443,79 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ ok: true });
           return;
         }
+
+        case 'pickInsert':
+          sendResponse(await pickInsert(p));
+          return;
+
+        case 'insertNext':
+          notify({ kind: 'insertNext' });
+          sendResponse({ ok: true });
+          return;
+
+        case 'probe':
+          await YMUDB.setSetting('probe', null);
+          notify({ kind: 'probe' });
+          sendResponse({ ok: true });
+          return;
+
+        case 'probeResult':
+          await YMUDB.setSetting('probe', p);
+          sendResponse({ ok: true });
+          return;
+
+        case 'getMissing': {
+          const list = (await YMUDB.getSetting('missing', [])) || [];
+          // файл могли импортировать позже — такие треки из списка убираем
+          const keys = new Set((await YMUDB.allFiles()).map((f) => f.key));
+          const binds = await YMUDB.allBindings();
+          for (const b of binds) if (b.fileId && !b.disabled) keys.add(b.key);
+          sendResponse({ missing: list.filter((m) => !keys.has(m.key)) });
+          return;
+        }
+
+        case 'hideMissing': {
+          const list = (await YMUDB.getSetting('missing', [])) || [];
+          const m = list.find((x) => x.key === p.key);
+          if (m) { m.hidden = p.hidden !== false; await YMUDB.setSetting('missing', list); }
+          sendResponse({ ok: true });
+          return;
+        }
+
+        case 'importNow':
+          sendResponse(await runImport(false));
+          return;
+
+        case 'importState': {
+          const dir = await YMUDB.getSetting('importDir', null);
+          const queue = (await YMUDB.getSetting('importQueue', [])) || [];
+          sendResponse({ folder: dir ? dir.name : null, queue: queue.length });
+          return;
+        }
+
+        case 'afterImport':
+          metaUpgraded = false;
+          // импорт сделала страница (там был клик и доступ к папке) — фону осталось проверить трек
+          setIconBadge(((await YMUDB.getSetting('importQueue', [])) || []).length);
+          await recheckCurrentTrack();
+          sendResponse({ ok: true });
+          return;
+
+        case 'clearMissing':
+          await YMUDB.setSetting('missing', []);
+          sendResponse({ ok: true });
+          return;
+
+        case 'getProbe':
+          sendResponse({ probe: await YMUDB.getSetting('probe', null) });
+          return;
+
+        case 'insertStarted':
+          // интервал считаем от реального старта вставки, а не от жребия
+          await YMUDB.setSetting('lastInsertAt', Date.now());
+          if (p.fileId) await YMUDB.setSetting('lastInsertFileId', p.fileId);
+          sendResponse({ ok: true });
+          return;
 
         case 'settingsChanged':
           sendResponse({ ok: true });

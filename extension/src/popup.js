@@ -26,6 +26,56 @@ async function send(type, payload) {
   }
 }
 
+/* ---------- скачанное ждёт импорта ---------- */
+
+async function renderImportCard() {
+  const r = await send('importState');
+  const n = (r && r.queue) || 0;
+  $('importCard').style.display = n ? 'block' : 'none';
+  if (!n) return;
+  $('importText').textContent = r.folder
+    ? `Скачано новых треков: ${n}`
+    : `Скачано треков: ${n}. Выбери папку загрузок в настройках`;
+  $('importBtn').textContent = r.folder ? 'Импортировать' : 'Настройки';
+}
+
+$('importBtn').addEventListener('click', async () => {
+  const st = await send('importState');
+  if (!st || !st.folder) { chrome.runtime.openOptionsPage(); return; }
+  // здесь есть клик — Chrome может спросить доступ к папке
+  const res = await YMUImport.processQueue(YMUDB, { ask: true });
+  await send('afterImport');
+  if (res.needPermission) setStatus('Chrome не дал доступ к папке загрузок.', 'bad');
+  else setStatus(`Импортировано: ${res.imported.length}` + (res.notFound.length ? `, не найдено в папке: ${res.notFound.length}` : ''), 'ok');
+  files = await YMUDB.allFiles();
+  renderSelect();
+  await renderImportCard();
+});
+
+/* ---------- поиск explicit-версии на сайтах ---------- */
+
+async function renderSearch() {
+  const row = $('searchRow'), box = $('searchBtns');
+  if (!currentTrack || !currentTrack.title) { row.style.display = 'none'; return; }
+  const state = await YMUSites.load(YMUDB);
+  const sites = YMUSites.ordered(state);
+  box.innerHTML = '';
+  if (!sites.length) {
+    box.innerHTML = '<span class="hint">Сайты выключены — включи их в настройках («Где искать»).</span>';
+  }
+  for (const site of sites) {
+    const a = document.createElement('a');
+    a.className = 'site' + (site.id === state.defaultId ? ' main' : '');
+    a.href = YMUSites.buildUrl(site, currentTrack);
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = site.name;
+    a.title = 'Искать «' + YMUSites.cleanQuery(currentTrack) + '» на ' + site.name;
+    box.appendChild(a);
+  }
+  row.style.display = 'block';
+}
+
 /* ---------- состояние ---------- */
 
 async function loadState() {
@@ -42,8 +92,8 @@ async function loadState() {
 
   renderTrack();
   renderSelect();
+  renderImportCard();
   await renderBinding();
-  await renderDiag();
 }
 
 function renderTrack() {
@@ -58,6 +108,7 @@ function renderTrack() {
   $('tArtist').textContent = currentTrack.artists || '';
   $('tKey').textContent = 'ключ: ' + (currentTrack.key || '—');
   $('bindBtn').disabled = false;
+  renderSearch();
 }
 
 function renderSelect() {
@@ -101,48 +152,6 @@ async function renderBinding() {
   }
 }
 
-/* ---------- диагностика ---------- */
-
-async function renderDiag() {
-  const r = await send('getDiag');
-  const rows = (r && r.diag) || [];
-  const box = $('diagBox');
-
-  if (!rows.length) {
-    box.innerHTML = '<div class="hint">Записей нет. Включи трек в плеере, подожди 2 секунды и нажми ↻.</div>';
-    return;
-  }
-
-  // решает последняя запись, а не первая ошибка в списке: раньше панель
-  // бранила старый сбой, хотя привязка уже была рабочей
-  const newest = rows[0];
-  const swap = rows.find((x) => /подмена: применена/.test(x.stage));
-
-  let summary = '';
-  if (newest && !newest.ok) {
-    summary = `<div class="summary bad">Оборвалось на: <b>${esc(newest.stage)}</b><br>`
-      + `<span class="detail">${esc(newest.detail || '')}</span></div>`;
-  } else if (swap) {
-    summary = '<div class="summary ok">Подмена сработала. Если слышишь цензуру — файл не тот, что играет.</div>';
-  } else if (newest && newest.ok) {
-    summary = '<div class="summary ok">Привязка есть, файл отдаётся странице.</div>';
-  }
-
-  const html = rows.slice(0, 25).map((x) => {
-    const time = new Date(x.ts).toLocaleTimeString('ru-RU');
-    return `<div class="step">
-      <span class="mark ${x.ok ? 'ok' : 'bad'}">${x.ok ? '✓' : '✕'}</span>
-      <span class="body">
-        <span class="stage">${esc(x.stage)}</span>
-        <span class="detail">${esc(x.detail || '')}</span>
-        <span class="detail">${time}</span>
-      </span>
-    </div>`;
-  }).join('');
-
-  box.innerHTML = summary + html;
-}
-
 /* ---------- действия ---------- */
 
 $('enabled').addEventListener('change', async (e) => {
@@ -166,7 +175,6 @@ $('bindBtn').addEventListener('click', async () => {
   if (res && res.ok) {
     setStatus(`Привязано: ${esc(f ? f.name : fileId)}. Подмена применится сразу.`, 'ok');
     await renderBinding();
-    setTimeout(renderDiag, 600);
   } else {
     setStatus('Не вышло: ' + esc((res && res.error) || 'нет ответа от фонового скрипта'), 'bad');
   }
@@ -177,15 +185,17 @@ $('unbindBtn').addEventListener('click', async () => {
   await send('unbind', { key: currentTrack.key });
   setStatus('Привязка снята.', 'warn');
   await renderBinding();
-  setTimeout(renderDiag, 400);
 });
 
 $('openOpts').addEventListener('click', () => chrome.runtime.openOptionsPage());
-$('refreshDiag').addEventListener('click', async () => {
-  await loadState();
-  setStatus('Обновлено.', 'ok');
+$('insertNext').addEventListener('click', async () => {
+  const s = await YMUDB.allSettings();
+  if (!s.insertEnabled) { setStatus('Сначала включи вставки в «Библиотеке и настройках».', 'bad'); return; }
+  const pool = (await YMUDB.allFiles()).filter((f) => f.insert);
+  if (!pool.length) { setStatus('Нет файлов с галочкой «Вставка» в библиотеке.', 'bad'); return; }
+  await send('insertNext');
+  setStatus('Вставка сыграет, когда текущий трек доиграет. Можно перемотать трек к концу.', 'ok');
 });
-
 (async function init() {
   await loadState();
   setInterval(async () => {
@@ -196,7 +206,6 @@ $('refreshDiag').addEventListener('click', async () => {
       renderTrack();
       renderSelect();
       await renderBinding();
-      await renderDiag();
-    }
+        }
   }, 1500);
 })();

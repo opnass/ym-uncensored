@@ -163,7 +163,7 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (!msg || !msg.kind) return;
 
-    if (msg.kind === 'state') {
+    if (msg.kind === 'state' || msg.kind === 'insertNext' || msg.kind === 'probe') {
       toPage(msg);
       return;
     }

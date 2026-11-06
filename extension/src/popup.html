@@ -33,24 +33,16 @@
     button.primary:hover { background: #ffd633; }
     button.ghost { background: transparent; }
     button:disabled { opacity: .4; cursor: default; }
+    a.site { display: inline-block; padding: 4px 9px; border-radius: 7px; border: 1px solid #3a3f4f;
+      background: #2b2f3c; color: #e6e7ea; text-decoration: none; font-size: 12px; }
+    a.site:hover { background: #353a4a; }
+    a.site.main { border-color: #ffcc00; color: #ffcc00; }
     .status { font-size: 12px; padding: 7px 9px; border-radius: 8px; margin-top: 9px; }
     .status.ok { background: #1e2a1c; color: #9ad48f; }
     .status.warn { background: #2a2418; color: #e8c47a; }
     .status.bad { background: #2a1a1a; color: #ff9a9a; }
     .hint { color: #6d7280; font-size: 11.5px; margin-top: 8px; line-height: 1.4; }
     h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: #8b8f9c; margin: 16px 0 7px; }
-    .diag { max-height: 210px; overflow-y: auto; }
-    .step { display: flex; gap: 7px; padding: 4px 0; border-bottom: 1px solid #23262f; font-size: 11.5px; }
-    .step:last-child { border-bottom: none; }
-    .step .mark { flex: none; width: 12px; font-weight: 700; }
-    .step .mark.ok { color: #7ee27e; }
-    .step .mark.bad { color: #ff8f8f; }
-    .step .body { min-width: 0; }
-    .step .stage { color: #cdd2de; }
-    .step .detail { color: #7c8190; font-size: 11px; word-break: break-word; }
-    .summary { font-size: 12px; padding: 8px 10px; border-radius: 8px; margin-bottom: 8px; }
-    .summary.ok { background: #1e2a1c; color: #9ad48f; }
-    .summary.bad { background: #2a1a1a; color: #ff9a9a; }
   </style>
 </head>
 <body>
@@ -60,10 +52,21 @@
     <label class="switch"><input type="checkbox" id="enabled" title="Включить" /></label>
   </header>
 
+  <div class="card" id="importCard" style="display:none;border-color:#5b3ea8">
+    <div class="row">
+      <span style="flex:1" id="importText">Скачаны новые треки</span>
+      <button class="primary" id="importBtn">Импортировать</button>
+    </div>
+  </div>
+
   <div class="card">
     <div class="track-title" id="tTitle">Определяю трек…</div>
     <div class="track-artist" id="tArtist"></div>
     <div class="mono" id="tKey"></div>
+    <div class="search" id="searchRow" style="display:none">
+      <div class="hint" style="margin:8px 0 4px">Найти explicit-версию:</div>
+      <div class="row" id="searchBtns" style="flex-wrap:wrap;gap:6px"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -79,20 +82,18 @@
 
   <div class="card">
     <div class="row">
+      <button id="insertNext" title="Без жребия и интервала: вставка сыграет, когда текущий трек доиграет">🎲 Вставить после трека</button>
       <button id="openOpts" style="flex:1">Библиотека и настройки</button>
-      <button class="ghost" id="refreshDiag" title="Обновить">↻</button>
     </div>
   </div>
 
   <div id="status"></div>
 
-  <h2>Диагностика — где рвётся</h2>
-  <div class="card diag" id="diagBox">
-    <div class="hint">Включи трек в плеере, потом нажми ↻.</div>
-  </div>
-
   <script src="normalize.js"></script>
   <script src="db.js"></script>
+  <script src="sites.js"></script>
+  <script src="cover.js"></script>
+  <script src="importer.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
