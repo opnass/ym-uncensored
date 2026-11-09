@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Иконка: жёлтые наушники на тёмном круге, как у расширения. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF14151A"
+        android:pathData="M54,4a50,50 0,1 1,0 100a50,50 0,1 1,0 -100z" />
+    <path
+        android:strokeColor="#FFFFCC00"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M28,62 L28,54 A26,26 0,0 1,80 54 L80,62" />
+    <path
+        android:fillColor="#FFFFCC00"
+        android:pathData="M22,58h14v24h-14z" />
+    <path
+        android:fillColor="#FFFFCC00"
+        android:pathData="M72,58h14v24h-14z" />
+</vector>
